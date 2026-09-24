@@ -106,3 +106,41 @@ td button {
 }
 .login-box h1 { font-size: 22px; }
 .login-box p { color: #ef4444; font-size: 13px; } 
+
+/* ============================================================
+   USER BADGE (navbar)
+   ============================================================ */
+.user-badge {
+  margin-left: auto;
+  margin-right: 12px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.user-badge .role-tag {
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.user-badge .role-tag.admin    { background: #dc2626; color: white; }
+.user-badge .role-tag.hrd      { background: #2563eb; color: white; }
+.user-badge .role-tag.manager  { background: #7c3aed; color: white; }
+.user-badge .role-tag.karyawan { background: #16a34a; color: white; }
+
+/* Sembunyikan tombol aksi yang gak diizinkan */
+td .read-only-badge {
+  color: #94a3b8;
+  font-size: 12px;
+  font-style: italic;
+}
