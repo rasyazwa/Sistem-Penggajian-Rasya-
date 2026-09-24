@@ -35,14 +35,17 @@
      APP VIEW
      ============================================================ -->
 <div id="appView">
-  <nav>
-    <span class="brand">💰 PayrollApp</span>
-    <button class="tab" data-view="jabatan" onclick="switchTab('jabatan')">Jabatan</button>
-    <button class="tab" data-view="karyawan" onclick="switchTab('karyawan')">Karyawan</button>
-    <button class="tab" data-view="absensi" onclick="switchTab('absensi')">Absensi</button>
-    <button class="tab" data-view="penggajian" onclick="switchTab('penggajian')">Penggajian</button>
-    <button class="logout" onclick="handleLogout()">Logout</button>
-  </nav>
+ <nav>
+  <span class="brand">💰 PayrollApp</span>
+  <div class="nav-tabs">
+    <button class="tab" data-view="jabatan" onclick="switchTab('jabatan')">📋 Jabatan</button>
+    <button class="tab" data-view="karyawan" onclick="switchTab('karyawan')">👥 Karyawan</button>
+    <button class="tab" data-view="absensi" onclick="switchTab('absensi')">📅 Absensi</button>
+    <button class="tab" data-view="penggajian" onclick="switchTab('penggajian')">💵 Penggajian</button>
+  </div>
+  <span id="userBadge" class="user-badge"></span>
+  <button class="logout" onclick="handleLogout()">Logout →</button>
+</nav>
 
   <main>
     <!-- ===== JABATAN ===== -->
