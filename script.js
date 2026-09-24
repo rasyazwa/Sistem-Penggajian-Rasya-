@@ -1,5 +1,5 @@
 /* ============================================================
-   SISTEM PENGGAJIAN - SINGLE JS FILE
+   SISTEM PENGGAJIAN - SINGLE JS FILE (WITH ROLE-BASED ACCESS)
    ============================================================ */
 
 /* ============================================================
@@ -16,7 +16,8 @@ const IS_FILE_PROTOCOL = window.location.protocol === 'file:';
 
 let db = null;
 let currentUser = null;
-let currentRole = 'admin'; // Default admin biar gampang, bisa diubah nanti
+let currentRole = 'karyawan';
+let currentUserName = '';
 
 try {
   if (CONFIG_VALID) {
@@ -38,6 +39,7 @@ function rupiah(angka) {
 
 function toast(msg, type = 'success') {
   const el = document.getElementById('toast');
+  if (!el) return;
   el.textContent = msg;
   el.className = 'show ' + type;
   clearTimeout(el._timer);
@@ -46,6 +48,7 @@ function toast(msg, type = 'success') {
 
 function setLoginMsg(text, type = 'error') {
   const msg = document.getElementById('loginMsg');
+  if (!msg) return;
   const colors = { error: '#ef4444', warning: '#f59e0b', success: '#16a34a' };
   msg.style.color = colors[type] || '#ef4444';
   msg.innerHTML = text;
@@ -64,7 +67,7 @@ async function handleLogin() {
     return;
   }
   if (IS_FILE_PROTOCOL) {
-    setLoginMsg('⚠️ File dibuka via file:// — harus via HTTP server.<br><small>Jalankan: <code>python -m http.server 8000</code></small>', 'warning');
+    setLoginMsg('⚠️ File dibuka via file:// — harus via HTTP server (GitHub Pages / Live Server).');
     return;
   }
   if (!email || !password) {
@@ -89,13 +92,7 @@ async function handleLogin() {
 
   } catch (err) {
     console.error('Login error:', err);
-    let pesan = 'Gagal terhubung ke server. ';
-    if (String(err.message || err).includes('fetch')) {
-      pesan += 'Cek koneksi internet & pastikan URL Supabase benar.';
-    } else {
-      pesan += err.message || err;
-    }
-    setLoginMsg(pesan);
+    setLoginMsg('Gagal terhubung ke server. Cek koneksi internet.');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Masuk';
@@ -106,27 +103,15 @@ async function handleRegister() {
   const email = document.getElementById('email').value.trim();
   const password = document.getElementById('password').value;
 
-  if (!CONFIG_VALID) {
-    setLoginMsg('⚠️ Supabase URL/Key belum diisi di kode!');
-    return;
-  }
-  if (!email || !password) {
-    setLoginMsg('Isi email dan password dulu');
-    return;
-  }
-  if (password.length < 6) {
-    setLoginMsg('Password minimal 6 karakter');
-    return;
-  }
+  if (!CONFIG_VALID) { setLoginMsg('⚠️ Supabase URL/Key belum diisi!'); return; }
+  if (!email || !password) { setLoginMsg('Isi email dan password dulu'); return; }
+  if (password.length < 6) { setLoginMsg('Password minimal 6 karakter'); return; }
 
   setLoginMsg('Memproses registrasi...', 'warning');
 
   try {
     const { error } = await db.auth.signUp({ email, password });
-    if (error) {
-      setLoginMsg(error.message);
-      return;
-    }
+    if (error) { setLoginMsg(error.message); return; }
     setLoginMsg('Registrasi berhasil! Cek email untuk verifikasi.', 'success');
   } catch (err) {
     console.error('Register error:', err);
@@ -141,18 +126,25 @@ async function handleLogout() {
   document.getElementById('email').value = '';
   document.getElementById('password').value = '';
   setLoginMsg('');
+  currentRole = 'karyawan';
+  currentUserName = '';
 }
 
 async function initApp() {
   document.getElementById('loginView').style.display = 'none';
   document.getElementById('appView').style.display = 'block';
 
+  // 1. Load profile user (untuk dapat role)
+  await loadProfile();
+
+  // 2. Load semua data
   await loadJabatan();
   await loadKaryawan();
   await loadAbsensi();
   await loadPenggajian();
 
-  switchTab('jabatan');
+  // 3. Atur tampilan sesuai role
+  applyRoleUI();
 }
 
 async function cekSession() {
@@ -176,7 +168,101 @@ async function cekSession() {
 }
 
 /* ============================================================
-   5. TAB NAVIGATION
+   5. ROLE MANAGEMENT
+   ============================================================ */
+async function loadProfile() {
+  try {
+    const { data: { user } } = await db.auth.getUser();
+    if (!user) return;
+
+    currentUser = user;
+
+    const { data, error } = await db.from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (error) {
+      console.warn('Profile belum ada, default role: karyawan');
+      currentRole = 'karyawan';
+      currentUserName = user.email;
+      return;
+    }
+
+    currentRole = data?.role || 'karyawan';
+    currentUserName = data?.nama_lengkap || user.email;
+    console.log(`👤 Login: ${currentUserName} | Role: ${currentRole}`);
+  } catch (err) {
+    console.error('Load profile error:', err);
+    currentRole = 'karyawan';
+    currentUserName = 'User';
+  }
+}
+
+function renderUserBadge() {
+  const badge = document.getElementById('userBadge');
+  if (!badge) return;
+  badge.innerHTML = `
+    ${currentUserName}
+    <span class="role-tag ${currentRole}">${currentRole}</span>
+  `;
+}
+
+function applyRoleUI() {
+  renderUserBadge();
+
+  // Aturan akses tab per role
+  const aksesTabs = {
+    admin:    ['jabatan', 'karyawan', 'absensi', 'penggajian'],
+    hrd:      ['karyawan', 'absensi', 'penggajian'],
+    manager:  ['penggajian'],
+    karyawan: ['absensi']
+  };
+
+  const allowed = aksesTabs[currentRole] || [];
+
+  // Sembunyikan tab yang gak boleh
+  document.querySelectorAll('nav .tab').forEach(tab => {
+    if (allowed.includes(tab.dataset.view)) {
+      tab.style.display = 'inline-block';
+    } else {
+      tab.style.display = 'none';
+    }
+  });
+
+  // Sembunyikan form input kalau read-only
+  const formMap = {
+    jabatan: 'formJabatan',
+    karyawan: 'formKaryawan',
+    absensi: 'formAbsensi',
+    penggajian: 'formPenggajian'
+  };
+
+  for (const [entitas, formId] of Object.entries(formMap)) {
+    const formEl = document.getElementById(formId);
+    if (formEl) {
+      formEl.style.display = bolehWrite(entitas) ? '' : 'none';
+    }
+  }
+
+  // Pindah ke tab pertama yang boleh
+  if (allowed.length > 0) {
+    switchTab(allowed[0]);
+  }
+}
+
+function bolehWrite(entitas) {
+  const izin = {
+    jabatan:    ['admin'],
+    karyawan:   ['admin', 'hrd'],
+    absensi:    ['admin', 'hrd'],
+    penggajian: ['admin']
+  };
+  return (izin[entitas] || []).includes(currentRole);
+}
+
+/* ============================================================
+   6. TAB NAVIGATION
    ============================================================ */
 function switchTab(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -188,7 +274,7 @@ function switchTab(name) {
 }
 
 /* ============================================================
-   6. CRUD JABATAN
+   7. CRUD JABATAN
    ============================================================ */
 let jabatanList = [];
 
@@ -198,6 +284,8 @@ async function loadJabatan() {
     if (error) throw error;
 
     jabatanList = data || [];
+    const bisaEdit = bolehWrite('jabatan');
+
     document.getElementById('tbodyJabatan').innerHTML = jabatanList.length
       ? jabatanList.map(j => `
           <tr>
@@ -205,8 +293,10 @@ async function loadJabatan() {
             <td>${rupiah(j.gaji_pokok)}</td>
             <td>${rupiah(j.tunjangan)}</td>
             <td>
-              <button onclick='editJabatan(${JSON.stringify(j)})'>Edit</button>
-              <button class="danger" onclick="hapusJabatan(${j.id})">Hapus</button>
+              ${bisaEdit ? `
+                <button onclick='editJabatan(${JSON.stringify(j)})'>Edit</button>
+                <button class="danger" onclick="hapusJabatan(${j.id})">Hapus</button>
+              ` : '<span class="read-only-badge">👁️ Read only</span>'}
             </td>
           </tr>`).join('')
       : '<tr><td colspan="4" class="empty">Belum ada data jabatan</td></tr>';
@@ -268,7 +358,7 @@ function resetFormJabatan() {
 }
 
 /* ============================================================
-   7. CRUD KARYAWAN
+   8. CRUD KARYAWAN
    ============================================================ */
 let karyawanList = [];
 
@@ -280,6 +370,8 @@ async function loadKaryawan() {
     if (error) throw error;
 
     karyawanList = data || [];
+    const bisaEdit = bolehWrite('karyawan');
+
     document.getElementById('tbodyKaryawan').innerHTML = karyawanList.length
       ? karyawanList.map(k => `
           <tr>
@@ -290,8 +382,10 @@ async function loadKaryawan() {
             <td>${k.tanggal_masuk || '-'}</td>
             <td><span class="badge ${k.status}">${k.status}</span></td>
             <td>
-              <button onclick='editKaryawan(${JSON.stringify(k)})'>Edit</button>
-              <button class="danger" onclick="hapusKaryawan(${k.id})">Hapus</button>
+              ${bisaEdit ? `
+                <button onclick='editKaryawan(${JSON.stringify(k)})'>Edit</button>
+                <button class="danger" onclick="hapusKaryawan(${k.id})">Hapus</button>
+              ` : '<span class="read-only-badge">👁️ Read only</span>'}
             </td>
           </tr>`).join('')
       : '<tr><td colspan="7" class="empty">Belum ada data karyawan</td></tr>';
@@ -360,7 +454,7 @@ function resetFormKaryawan() {
 }
 
 /* ============================================================
-   8. CRUD ABSENSI
+   9. CRUD ABSENSI
    ============================================================ */
 async function loadAbsensi() {
   try {
@@ -369,6 +463,8 @@ async function loadAbsensi() {
       .order('tanggal', { ascending: false })
       .limit(100);
     if (error) throw error;
+
+    const bisaEdit = bolehWrite('absensi');
 
     document.getElementById('tbodyAbsensi').innerHTML = (data && data.length)
       ? data.map(a => `
@@ -379,8 +475,10 @@ async function loadAbsensi() {
             <td>${a.jam_masuk || '-'}</td>
             <td>${a.jam_keluar || '-'}</td>
             <td>
-              <button onclick='editAbsensi(${JSON.stringify(a)})'>Edit</button>
-              <button class="danger" onclick="hapusAbsensi(${a.id})">Hapus</button>
+              ${bisaEdit ? `
+                <button onclick='editAbsensi(${JSON.stringify(a)})'>Edit</button>
+                <button class="danger" onclick="hapusAbsensi(${a.id})">Hapus</button>
+              ` : '<span class="read-only-badge">👁️ Read only</span>'}
             </td>
           </tr>`).join('')
       : '<tr><td colspan="6" class="empty">Belum ada data absensi</td></tr>';
@@ -442,12 +540,14 @@ function resetFormAbsensi() {
 }
 
 /* ============================================================
-   9. CRUD PENGGAJIAN
+   10. CRUD PENGGAJIAN
    ============================================================ */
 async function loadPenggajian() {
   try {
     const { data, error } = await db.from('v_laporan_gaji').select('*');
     if (error) throw error;
+
+    const bisaWrite = bolehWrite('penggajian');
 
     document.getElementById('tbodyPenggajian').innerHTML = (data && data.length)
       ? data.map(p => `
@@ -461,8 +561,10 @@ async function loadPenggajian() {
             <td><b>${rupiah(p.total_gaji)}</b></td>
             <td><span class="badge ${p.status}">${p.status}</span></td>
             <td>
-              <button onclick="bayarGaji(${p.id})" ${p.status === 'dibayar' ? 'disabled' : ''}>Bayar</button>
-              <button class="danger" onclick="hapusPenggajian(${p.id})">Hapus</button>
+              ${bisaWrite ? `
+                <button onclick="bayarGaji(${p.id})" ${p.status === 'dibayar' ? 'disabled' : ''}>Bayar</button>
+                <button class="danger" onclick="hapusPenggajian(${p.id})">Hapus</button>
+              ` : '<span class="read-only-badge">👁️ Read only</span>'}
             </td>
           </tr>`).join('')
       : '<tr><td colspan="9" class="empty">Belum ada data penggajian</td></tr>';
@@ -548,7 +650,7 @@ function resetFormPenggajian() {
 }
 
 /* ============================================================
-   10. BOOT
+   11. BOOT
    ============================================================ */
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('🔧 Supabase URL:', SUPABASE_URL);
@@ -556,14 +658,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await cekSession();
 
-  document.getElementById('password').addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') handleLogin();
-  });
+  const passEl = document.getElementById('password');
+  if (passEl) {
+    passEl.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') handleLogin();
+    });
+  }
 
-  db.auth.onAuthStateChange((event) => {
-    if (event === 'SIGNED_OUT') {
-      document.getElementById('appView').style.display = 'none';
-      document.getElementById('loginView').style.display = 'flex';
-    }
-  });
+  if (db) {
+    db.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        document.getElementById('appView').style.display = 'none';
+        document.getElementById('loginView').style.display = 'flex';
+      }
+    });
+  }
 });
